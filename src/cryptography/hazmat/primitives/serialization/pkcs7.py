@@ -52,8 +52,6 @@ class PKCS7Options(utils.Enum):
     NoCapabilities = "Don't embed SMIME capabilities"
     NoAttributes = "Don't embed authenticatedAttributes"
     NoCerts = "Don't embed signer certificate"
-    NoVerify = "Don't verify signers certificate"
-    NoSigs = "Don't verify signature"
 
 
 class PKCS7SignatureBuilder:
