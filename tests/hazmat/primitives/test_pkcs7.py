@@ -18,6 +18,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519, padding, rsa
 from cryptography.hazmat.primitives.ciphers import algorithms
 from cryptography.hazmat.primitives.serialization import pkcs7
+from cryptography.x509.verification import PolicyBuilder, Store
 from tests.x509.test_x509 import _generate_ca_and_leaf
 
 from ...hazmat.primitives.fixtures_rsa import (
@@ -137,6 +138,19 @@ def _load_cert_key():
         mode="rb",
     )
     return cert, key
+
+
+def test_verify_pkcs7_certificate():
+    certificate, _ = _load_cert_key()
+
+    builder = (
+        PolicyBuilder()
+        .store(Store([certificate]))
+        .extension_policies(*pkcs7.pkcs7_x509_extension_policies())
+    )
+
+    verifier = builder.build_client_verifier()
+    verifier.verify(certificate, [])
 
 
 @pytest.mark.supported(
