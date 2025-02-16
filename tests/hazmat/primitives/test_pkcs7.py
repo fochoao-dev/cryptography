@@ -126,14 +126,14 @@ class TestPKCS7Loading:
 
 def _load_cert_key():
     key = load_vectors_from_file(
-        os.path.join("x509", "custom", "ca", "ca_key.pem"),
+        os.path.join("pkcs7", "ca_key.pem"),
         lambda pemfile: serialization.load_pem_private_key(
             pemfile.read(), None, unsafe_skip_rsa_key_validation=True
         ),
         mode="rb",
     )
     cert = load_vectors_from_file(
-        os.path.join("x509", "custom", "ca", "ca.pem"),
+        os.path.join("pkcs7", "ca.pem"),
         loader=lambda pemfile: x509.load_pem_x509_certificate(pemfile.read()),
         mode="rb",
     )
