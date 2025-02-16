@@ -70,29 +70,32 @@ def pkcs7_x509_extension_policies() -> tuple[ExtensionPolicy, ExtensionPolicy]:
     - EKU_EMAIL_PROTECTION_OID is required
     """
 
-    # CA policy
-    def _validate_ca(
-        policy: Policy, cert: Certificate, bc: x509.BasicConstraints
-    ):
-        assert not bc.ca
-
-    ca_policy = ExtensionPolicy.permit_all().require_present(
-        x509.BasicConstraints,
-        Criticality.AGNOSTIC,
-        _validate_ca,
-    )
+    # CA policy - TODO: is there any?
+    ca_policy = ExtensionPolicy.permit_all()
 
     # EE policy
     def _validate_eku(
         policy: Policy, cert: Certificate, eku: x509.ExtendedKeyUsage
     ):
-        # Checking for EKU_EMAIL_PROTECTION_OID
         assert x509.ExtendedKeyUsageOID.EMAIL_PROTECTION in eku  # type: ignore[attr-defined]
 
-    ee_policy = ExtensionPolicy.permit_all().require_present(
-        x509.ExtendedKeyUsage,
-        Criticality.AGNOSTIC,
-        _validate_eku,
+    def _validate_ca(
+        policy: Policy, cert: Certificate, bc: x509.BasicConstraints
+    ):
+        assert not bc.ca
+
+    ee_policy = (
+        ExtensionPolicy.permit_all()
+        .require_present(
+            x509.ExtendedKeyUsage,
+            Criticality.AGNOSTIC,
+            _validate_eku,
+        )
+        .may_be_present(
+            x509.BasicConstraints,
+            Criticality.AGNOSTIC,
+            _validate_ca,
+        )
     )
 
     return ca_policy, ee_policy
