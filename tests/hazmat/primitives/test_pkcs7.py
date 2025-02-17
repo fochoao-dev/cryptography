@@ -142,11 +142,12 @@ def _load_cert_key():
 
 def test_verify_pkcs7_certificate():
     certificate, _ = _load_cert_key()
+    ca_policy, ee_policy = pkcs7.pkcs7_x509_extension_policies()
 
     builder = (
         PolicyBuilder()
         .store(Store([certificate]))
-        .extension_policies(*pkcs7.pkcs7_x509_extension_policies())
+        .extension_policies(ca_policy, ee_policy)
     )
 
     verifier = builder.build_client_verifier()
