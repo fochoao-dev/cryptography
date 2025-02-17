@@ -71,30 +71,68 @@ def pkcs7_x509_extension_policies() -> tuple[ExtensionPolicy, ExtensionPolicy]:
     """
 
     # CA policy - TODO: is there any?
-    ca_policy = ExtensionPolicy.permit_all()
+    ca_policy = ExtensionPolicy.webpki_defaults_ca()
 
     # EE policy
-    def _validate_eku(
-        policy: Policy, cert: Certificate, eku: x509.ExtendedKeyUsage
-    ):
-        assert x509.ExtendedKeyUsageOID.EMAIL_PROTECTION in eku  # type: ignore[attr-defined]
+    def _validate_basic_constraints(
+        policy: Policy, cert: Certificate, bc: x509.BasicConstraints | None
+    ) -> None:
+        if bc is not None and bc.ca:
+            raise ValueError("Basic Constraints CA must be False.")
 
-    def _validate_ca(
-        policy: Policy, cert: Certificate, bc: x509.BasicConstraints
-    ):
-        assert not bc.ca
+    def _validate_key_usage(
+        policy: Policy, cert: Certificate, ku: x509.KeyUsage | None
+    ) -> None:
+        if ku is not None:
+            # Content commitment used to be named non repudiation
+            if not ku.digital_signature or ku.content_commitment:
+                raise ValueError(
+                    "Key Usage, if specified, must have at least one of the "
+                    "digital signature or content commitment (formerly non "
+                    "repudiation) bits set"
+                )
+
+    def _validate_subject_alternative_name(
+        policy: Policy,
+        cert: Certificate,
+        san: x509.SubjectAlternativeName | None,
+    ) -> None:
+        if san is not None:
+            pass
+
+    def _validate_extended_key_usage(
+        policy: Policy, cert: Certificate, eku: x509.ExtendedKeyUsage | None
+    ) -> None:
+        if eku is not None:
+            ep = x509.ExtendedKeyUsageOID.EMAIL_PROTECTION in eku  # type: ignore[attr-defined]
+            aeku = x509.ExtendedKeyUsageOID.ANY_EXTENDED_KEY_USAGE in eku  # type: ignore[attr-defined]
+            if not (ep or aeku):
+                raise ValueError(
+                    "Extended Key Usage, if specified, must include "
+                    "emailProtection or anyExtendedKeyUsage"
+                )
 
     ee_policy = (
         ExtensionPolicy.permit_all()
-        .require_present(
-            x509.ExtendedKeyUsage,
-            Criticality.AGNOSTIC,
-            _validate_eku,
-        )
         .may_be_present(
             x509.BasicConstraints,
             Criticality.AGNOSTIC,
-            _validate_ca,
+            _validate_basic_constraints,
+        )
+        .may_be_present(
+            x509.KeyUsage,
+            Criticality.CRITICAL,
+            _validate_key_usage,
+        )
+        .may_be_present(
+            x509.SubjectAlternativeName,
+            Criticality.AGNOSTIC,
+            _validate_subject_alternative_name,
+        )
+        .may_be_present(
+            x509.ExtendedKeyUsage,
+            Criticality.AGNOSTIC,
+            _validate_extended_key_usage,
         )
     )
 
