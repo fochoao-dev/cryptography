@@ -18,7 +18,11 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519, padding, rsa
 from cryptography.hazmat.primitives.ciphers import algorithms
 from cryptography.hazmat.primitives.serialization import pkcs7
-from cryptography.x509.verification import PolicyBuilder, Store
+from cryptography.x509.verification import (
+    PolicyBuilder,
+    Store,
+    VerificationError,
+)
 from tests.x509.test_x509 import _generate_ca_and_leaf
 
 from ...hazmat.primitives.fixtures_rsa import (
@@ -140,18 +144,113 @@ def _load_cert_key():
     return cert, key
 
 
-def test_verify_pkcs7_certificate():
-    certificate, _ = _load_cert_key()
-    ca_policy, ee_policy = pkcs7.pkcs7_x509_extension_policies()
+class TestPKCS7VerifyCertificate:
+    def test_verify_pkcs7_certificate(self):
+        certificate, _ = _load_cert_key()
+        ca_policy, ee_policy = pkcs7.pkcs7_x509_extension_policies()
 
-    builder = (
-        PolicyBuilder()
-        .store(Store([certificate]))
-        .extension_policies(ca_policy, ee_policy)
-    )
+        verifier = (
+            PolicyBuilder()
+            .store(Store([certificate]))
+            .extension_policies(ca_policy, ee_policy)
+            .build_client_verifier()
+        )
+        verifier.verify(certificate, [])
 
-    verifier = builder.build_client_verifier()
-    verifier.verify(certificate, [])
+    @pytest.fixture(name="certificate_builder")
+    def fixture_certificate_builder(self) -> x509.CertificateBuilder:
+        certificate, private_key = _load_cert_key()
+        return (
+            x509.CertificateBuilder()
+            .serial_number(certificate.serial_number)
+            .subject_name(certificate.subject)
+            .issuer_name(certificate.issuer)
+            .public_key(private_key.public_key())
+            .not_valid_before(certificate.not_valid_before)
+            .not_valid_after(certificate.not_valid_after)
+        )
+
+    def test_verify_pkcs7_certificate_wrong_bc(self, certificate_builder):
+        certificate, private_key = _load_cert_key()
+
+        # Add an invalid extension
+        extension = x509.BasicConstraints(ca=True, path_length=None)
+        certificate_builder = certificate_builder.add_extension(
+            extension, True
+        )
+
+        # Build the certificate
+        pkcs7_certificate = certificate_builder.sign(
+            private_key, certificate.signature_hash_algorithm, None
+        )
+
+        # Verify the certificate
+        self.verify_invalid_pkcs7_certificate(pkcs7_certificate)
+
+    def test_verify_pkcs7_certificate_wrong_ku(self, certificate_builder):
+        certificate, private_key = _load_cert_key()
+
+        # Add an invalid extension
+        extension = x509.KeyUsage(
+            digital_signature=False,
+            content_commitment=False,
+            key_encipherment=True,
+            data_encipherment=True,
+            key_agreement=True,
+            key_cert_sign=True,
+            crl_sign=True,
+            encipher_only=False,
+            decipher_only=False,
+        )
+        certificate_builder = certificate_builder.add_extension(
+            extension, True
+        )
+
+        # Build the certificate
+        pkcs7_certificate = certificate_builder.sign(
+            private_key, certificate.signature_hash_algorithm, None
+        )
+
+        # Verify the certificate
+        self.verify_invalid_pkcs7_certificate(pkcs7_certificate)
+
+    def test_verify_pkcs7_certificate_wrong_eku(self, certificate_builder):
+        certificate, private_key = _load_cert_key()
+
+        # Add an invalid extension
+        usages = [x509.ExtendedKeyUsageOID.CLIENT_AUTH]  # type: ignore[attr-defined]
+        extension = x509.ExtendedKeyUsage(usages)
+        certificate_builder = certificate_builder.add_extension(
+            extension, True
+        )
+
+        # Add an invalid extension
+        usages = [x509.ExtendedKeyUsageOID.CLIENT_AUTH]  # type: ignore[attr-defined]
+        extension = x509.ExtendedKeyUsage(usages)
+        certificate_builder = certificate_builder.add_extension(
+            extension, True
+        )
+
+        # Build the certificate
+        pkcs7_certificate = certificate_builder.sign(
+            private_key, certificate.signature_hash_algorithm, None
+        )
+
+        # Verify the certificate
+        self.verify_invalid_pkcs7_certificate(pkcs7_certificate)
+
+    @staticmethod
+    def verify_invalid_pkcs7_certificate(certificate: x509.Certificate):
+        ca_policy, ee_policy = pkcs7.pkcs7_x509_extension_policies()
+        verifier = (
+            PolicyBuilder()
+            .store(Store([certificate]))
+            .extension_policies(ca_policy, ee_policy)
+            .build_client_verifier()
+        )
+
+        with pytest.raises(VerificationError):
+            verifier.verify(certificate, [])
 
 
 @pytest.mark.supported(

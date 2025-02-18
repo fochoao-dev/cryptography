@@ -89,16 +89,38 @@ def pkcs7_x509_extension_policies() -> tuple[ExtensionPolicy, ExtensionPolicy]:
                 raise ValueError(
                     "Key Usage, if specified, must have at least one of the "
                     "digital signature or content commitment (formerly non "
-                    "repudiation) bits set"
+                    "repudiation) bits set."
                 )
 
     def _validate_subject_alternative_name(
         policy: Policy,
         cert: Certificate,
-        san: x509.SubjectAlternativeName | None,
+        san: x509.SubjectAlternativeName,
     ) -> None:
-        if san is not None:
-            pass
+        """
+        For each general name in the SAN, for those which are email addresses:
+        - If it is an RFC822Name, general part must be ascii.
+        - If it is an OtherName, general part must be non-ascii.
+        """
+        for general_name in san:
+            if (
+                isinstance(general_name, x509.RFC822Name)
+                and "@" in general_name.value
+                and not general_name.value.split("@")[0].isascii()
+            ):
+                raise ValueError(
+                    f"RFC822Name {general_name.value} contains non-ASCII "
+                    "characters."
+                )
+            if (
+                isinstance(general_name, x509.OtherName)
+                and "@" in general_name.value.decode()
+                and general_name.value.decode().split("@")[0].isascii()
+            ):
+                raise ValueError(
+                    f"OtherName {general_name.value.decode()} is ASCII, "
+                    "so must be stored in RFC822Name."
+                )
 
     def _validate_extended_key_usage(
         policy: Policy, cert: Certificate, eku: x509.ExtendedKeyUsage | None
@@ -109,11 +131,11 @@ def pkcs7_x509_extension_policies() -> tuple[ExtensionPolicy, ExtensionPolicy]:
             if not (ep or aeku):
                 raise ValueError(
                     "Extended Key Usage, if specified, must include "
-                    "emailProtection or anyExtendedKeyUsage"
+                    "emailProtection or anyExtendedKeyUsage."
                 )
 
     ee_policy = (
-        ExtensionPolicy.permit_all()
+        ExtensionPolicy.webpki_defaults_ee()
         .may_be_present(
             x509.BasicConstraints,
             Criticality.AGNOSTIC,
@@ -124,7 +146,7 @@ def pkcs7_x509_extension_policies() -> tuple[ExtensionPolicy, ExtensionPolicy]:
             Criticality.CRITICAL,
             _validate_key_usage,
         )
-        .may_be_present(
+        .require_present(
             x509.SubjectAlternativeName,
             Criticality.AGNOSTIC,
             _validate_subject_alternative_name,
