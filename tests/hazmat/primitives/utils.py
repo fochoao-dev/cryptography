@@ -353,7 +353,7 @@ def hkdf_extract_test(backend, algorithm, params):
         backend=backend,
     )
 
-    prk = hkdf._extract(binascii.unhexlify(params["ikm"]))
+    prk = hkdf._extract(binascii.unhexlify(params["ikm"]))  # type: ignore[attr-defined]
 
     assert prk == binascii.unhexlify(params["prk"])
 
