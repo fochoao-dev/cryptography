@@ -2,32 +2,42 @@
 # 2.0, and the BSD License. See the LICENSE file in the root of this repository
 # for complete details.
 
-from __future__ import absolute_import, division, print_function
 
 import binascii
 import os
+import sys
 
 import pytest
 
-from cryptography.exceptions import AlreadyFinalized, _Reasons
-from cryptography.hazmat.backends.interfaces import CipherBackend
+from cryptography import utils
+from cryptography.exceptions import AlreadyFinalized
 from cryptography.hazmat.primitives import ciphers
 from cryptography.hazmat.primitives.ciphers import modes
 from cryptography.hazmat.primitives.ciphers.algorithms import (
-    AES, ARC4, Blowfish, CAST5, Camellia, IDEA, SEED, TripleDES
+    AES,
+    Camellia,
 )
 
-from ...utils import (
-    load_nist_vectors, load_vectors_from_file, raises_unsupported_algorithm
-)
+from ...utils import load_nist_vectors, load_vectors_from_file
+from .test_aead import large_mmap
 
 
-class TestAES(object):
-    @pytest.mark.parametrize(("key", "keysize"), [
-        (b"0" * 32, 128),
-        (b"0" * 48, 192),
-        (b"0" * 64, 256),
-    ])
+def test_deprecated_ciphers_import_with_warning():
+    with pytest.warns(utils.CryptographyDeprecationWarning):
+        from cryptography.hazmat.primitives.ciphers.algorithms import (
+            ARC4,  # noqa: F401
+        )
+    with pytest.warns(utils.CryptographyDeprecationWarning):
+        from cryptography.hazmat.primitives.ciphers.algorithms import (
+            TripleDES,  # noqa: F401
+        )
+
+
+class TestAES:
+    @pytest.mark.parametrize(
+        ("key", "keysize"),
+        [(b"0" * 32, 128), (b"0" * 48, 192), (b"0" * 64, 256)],
+    )
     def test_key_size(self, key, keysize):
         cipher = AES(binascii.unhexlify(key))
         assert cipher.key_size == keysize
@@ -36,12 +46,14 @@ class TestAES(object):
         with pytest.raises(ValueError):
             AES(binascii.unhexlify(b"0" * 12))
 
+    def test_invalid_key_type(self):
+        with pytest.raises(TypeError, match="key must be bytes"):
+            AES("0" * 32)  # type: ignore[arg-type]
 
-class TestAESXTS(object):
-    @pytest.mark.requires_backend_interface(interface=CipherBackend)
+
+class TestAESXTS:
     @pytest.mark.parametrize(
-        "mode",
-        (modes.CBC, modes.CTR, modes.CFB, modes.CFB8, modes.OFB)
+        "mode", (modes.CBC, modes.CTR, modes.CFB, modes.CFB8, modes.OFB)
     )
     def test_invalid_key_size_with_mode(self, mode, backend):
         with pytest.raises(ValueError):
@@ -49,24 +61,29 @@ class TestAESXTS(object):
 
     def test_xts_tweak_not_bytes(self):
         with pytest.raises(TypeError):
-            modes.XTS(32)
+            modes.XTS(32)  # type: ignore[arg-type]
 
     def test_xts_tweak_too_small(self):
         with pytest.raises(ValueError):
             modes.XTS(b"0")
 
-    @pytest.mark.requires_backend_interface(interface=CipherBackend)
     def test_xts_wrong_key_size(self, backend):
         with pytest.raises(ValueError):
             ciphers.Cipher(AES(b"0" * 16), modes.XTS(b"0" * 16), backend)
 
 
-class TestCamellia(object):
-    @pytest.mark.parametrize(("key", "keysize"), [
-        (b"0" * 32, 128),
-        (b"0" * 48, 192),
-        (b"0" * 64, 256),
-    ])
+class TestGCM:
+    @pytest.mark.parametrize("size", [7, 129])
+    def test_gcm_min_max(self, size):
+        with pytest.raises(ValueError):
+            modes.GCM(b"0" * size)
+
+
+class TestCamellia:
+    @pytest.mark.parametrize(
+        ("key", "keysize"),
+        [(b"0" * 32, 128), (b"0" * 48, 192), (b"0" * 64, 256)],
+    )
     def test_key_size(self, key, keysize):
         cipher = Camellia(binascii.unhexlify(key))
         assert cipher.key_size == keysize
@@ -75,92 +92,9 @@ class TestCamellia(object):
         with pytest.raises(ValueError):
             Camellia(binascii.unhexlify(b"0" * 12))
 
-
-class TestTripleDES(object):
-    @pytest.mark.parametrize("key", [
-        b"0" * 16,
-        b"0" * 32,
-        b"0" * 48,
-    ])
-    def test_key_size(self, key):
-        cipher = TripleDES(binascii.unhexlify(key))
-        assert cipher.key_size == 192
-
-    def test_invalid_key_size(self):
-        with pytest.raises(ValueError):
-            TripleDES(binascii.unhexlify(b"0" * 12))
-
-
-class TestBlowfish(object):
-    @pytest.mark.parametrize(("key", "keysize"), [
-        (b"0" * (keysize // 4), keysize) for keysize in range(32, 449, 8)
-    ])
-    def test_key_size(self, key, keysize):
-        cipher = Blowfish(binascii.unhexlify(key))
-        assert cipher.key_size == keysize
-
-    def test_invalid_key_size(self):
-        with pytest.raises(ValueError):
-            Blowfish(binascii.unhexlify(b"0" * 6))
-
-
-class TestCAST5(object):
-    @pytest.mark.parametrize(("key", "keysize"), [
-        (b"0" * (keysize // 4), keysize) for keysize in range(40, 129, 8)
-    ])
-    def test_key_size(self, key, keysize):
-        cipher = CAST5(binascii.unhexlify(key))
-        assert cipher.key_size == keysize
-
-    def test_invalid_key_size(self):
-        with pytest.raises(ValueError):
-            CAST5(binascii.unhexlify(b"0" * 34))
-
-
-class TestARC4(object):
-    @pytest.mark.parametrize(("key", "keysize"), [
-        (b"0" * 10, 40),
-        (b"0" * 14, 56),
-        (b"0" * 16, 64),
-        (b"0" * 20, 80),
-        (b"0" * 32, 128),
-        (b"0" * 48, 192),
-        (b"0" * 64, 256),
-    ])
-    def test_key_size(self, key, keysize):
-        cipher = ARC4(binascii.unhexlify(key))
-        assert cipher.key_size == keysize
-
-    def test_invalid_key_size(self):
-        with pytest.raises(ValueError):
-            ARC4(binascii.unhexlify(b"0" * 34))
-
-
-class TestIDEA(object):
-    def test_key_size(self):
-        cipher = IDEA(b"\x00" * 16)
-        assert cipher.key_size == 128
-
-    def test_invalid_key_size(self):
-        with pytest.raises(ValueError):
-            IDEA(b"\x00" * 17)
-
-
-class TestSEED(object):
-    def test_key_size(self):
-        cipher = SEED(b"\x00" * 16)
-        assert cipher.key_size == 128
-
-    def test_invalid_key_size(self):
-        with pytest.raises(ValueError):
-            SEED(b"\x00" * 17)
-
-
-def test_invalid_backend():
-    pretend_backend = object()
-
-    with raises_unsupported_algorithm(_Reasons.BACKEND_MISSING_INTERFACE):
-        ciphers.Cipher(AES(b"AAAAAAAAAAAAAAAA"), modes.ECB, pretend_backend)
+    def test_invalid_key_type(self):
+        with pytest.raises(TypeError, match="key must be bytes"):
+            Camellia("0" * 32)  # type: ignore[arg-type]
 
 
 @pytest.mark.supported(
@@ -169,14 +103,13 @@ def test_invalid_backend():
     ),
     skip_message="Does not support AES ECB",
 )
-@pytest.mark.requires_backend_interface(interface=CipherBackend)
-class TestCipherUpdateInto(object):
+class TestCipherUpdateInto:
     @pytest.mark.parametrize(
         "params",
         load_vectors_from_file(
             os.path.join("ciphers", "AES", "ECB", "ECBGFSbox128.rsp"),
-            load_nist_vectors
-        )
+            load_nist_vectors,
+        ),
     )
     def test_update_into(self, params, backend):
         key = binascii.unhexlify(params["key"])
@@ -236,12 +169,27 @@ class TestCipherUpdateInto(object):
         with pytest.raises(AlreadyFinalized):
             decryptor.finalize_with_tag(encryptor.tag)
 
+    @pytest.mark.supported(
+        only_if=lambda backend: backend.cipher_supported(
+            AES(b"\x00" * 16), modes.GCM(b"0" * 12)
+        ),
+        skip_message="Does not support AES GCM",
+    )
+    def test_finalize_with_tag_duplicate_tag(self, backend):
+        decryptor = ciphers.Cipher(
+            AES(b"\x00" * 16),
+            modes.GCM(b"\x00" * 12, tag=b"\x00" * 16),
+            backend,
+        ).decryptor()
+        with pytest.raises(ValueError):
+            decryptor.finalize_with_tag(b"\x00" * 16)
+
     @pytest.mark.parametrize(
         "params",
         load_vectors_from_file(
             os.path.join("ciphers", "AES", "ECB", "ECBGFSbox128.rsp"),
-            load_nist_vectors
-        )
+            load_nist_vectors,
+        ),
     )
     def test_update_into_multiple_calls(self, params, backend):
         key = binascii.unhexlify(params["key"])
@@ -264,6 +212,14 @@ class TestCipherUpdateInto(object):
         with pytest.raises(ValueError):
             encryptor.update_into(b"testing", buf)
 
+    def test_update_into_immutable(self, backend):
+        key = b"\x00" * 16
+        c = ciphers.Cipher(AES(key), modes.ECB(), backend)
+        encryptor = c.encryptor()
+        buf = b"\x00" * 32
+        with pytest.raises((TypeError, BufferError)):
+            encryptor.update_into(b"testing", buf)
+
     @pytest.mark.supported(
         only_if=lambda backend: backend.cipher_supported(
             AES(b"\x00" * 16), modes.GCM(b"\x00" * 12)
@@ -277,3 +233,30 @@ class TestCipherUpdateInto(object):
         buf = bytearray(5)
         with pytest.raises(ValueError):
             encryptor.update_into(b"testing", buf)
+
+    def test_update_with_invalid_type(self, backend):
+        key = b"\x00" * 16
+        c = ciphers.Cipher(AES(key), modes.GCM(b"\x00" * 12), backend)
+        encryptor = c.encryptor()
+        with pytest.raises(TypeError, match="bytestring instead?"):
+            encryptor.update("hello")  # type: ignore[arg-type]
+        with pytest.raises(TypeError, match="instance to a buffer"):
+            encryptor.update(object)  # type: ignore[arg-type]
+
+
+@pytest.mark.skipif(
+    sys.platform not in {"linux", "darwin"}, reason="mmap required"
+)
+def test_update_auto_chunking():
+    large_data = large_mmap(length=2**29 + 2**20)
+
+    key = b"\x00" * 16
+    c = ciphers.Cipher(AES(key), modes.ECB())
+    encryptor = c.encryptor()
+
+    result = encryptor.update(memoryview(large_data))
+    assert len(result) == len(large_data)
+
+    decryptor = c.decryptor()
+    result = decryptor.update(result)
+    assert result == large_data[:]

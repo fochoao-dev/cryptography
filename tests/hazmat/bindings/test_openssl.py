@@ -2,42 +2,35 @@
 # 2.0, and the BSD License. See the LICENSE file in the root of this repository
 # for complete details.
 
-from __future__ import absolute_import, division, print_function
-
 import pytest
 
 from cryptography.exceptions import InternalError
+from cryptography.hazmat.bindings._rust import openssl as rust_openssl
 from cryptography.hazmat.bindings.openssl.binding import (
-    Binding, _consume_errors, _openssl_assert
+    Binding,
+    _openssl_assert,
+    _verify_package_version,
 )
 
 
-class TestOpenSSL(object):
+class TestOpenSSL:
     def test_binding_loads(self):
         binding = Binding()
         assert binding
         assert binding.lib
         assert binding.ffi
 
-    def test_crypto_lock_init(self):
-        b = Binding()
-        if b.lib.CRYPTOGRAPHY_OPENSSL_110_OR_GREATER:
-            pytest.skip("Requires an older OpenSSL. Must be < 1.1.0")
-
-        b.init_static_locks()
-        lock_cb = b.lib.CRYPTO_get_locking_callback()
-        assert lock_cb != b.ffi.NULL
-
-    def test_add_engine_more_than_once(self):
-        b = Binding()
-        b._register_osrandom_engine()
-        assert b.lib.ERR_get_error() == 0
-
     def test_ssl_ctx_options(self):
         # Test that we're properly handling 32-bit unsigned on all platforms.
         b = Binding()
-        assert b.lib.SSL_OP_ALL > 0
-        ctx = b.lib.SSL_CTX_new(b.lib.TLSv1_method())
+        # SSL_OP_ALL is 0 on BoringSSL
+        if not (
+            rust_openssl.CRYPTOGRAPHY_IS_BORINGSSL
+            or rust_openssl.CRYPTOGRAPHY_IS_AWSLC
+        ):
+            assert b.lib.SSL_OP_ALL > 0
+        ctx = b.lib.SSL_CTX_new(b.lib.TLS_method())
+        assert ctx != b.ffi.NULL
         ctx = b.ffi.gc(ctx, b.lib.SSL_CTX_free)
         current_options = b.lib.SSL_CTX_get_options(ctx)
         resp = b.lib.SSL_CTX_set_options(ctx, b.lib.SSL_OP_ALL)
@@ -48,8 +41,14 @@ class TestOpenSSL(object):
     def test_ssl_options(self):
         # Test that we're properly handling 32-bit unsigned on all platforms.
         b = Binding()
-        assert b.lib.SSL_OP_ALL > 0
-        ctx = b.lib.SSL_CTX_new(b.lib.TLSv1_method())
+        # SSL_OP_ALL is 0 on BoringSSL
+        if not (
+            rust_openssl.CRYPTOGRAPHY_IS_BORINGSSL
+            or rust_openssl.CRYPTOGRAPHY_IS_AWSLC
+        ):
+            assert b.lib.SSL_OP_ALL > 0
+        ctx = b.lib.SSL_CTX_new(b.lib.TLS_method())
+        assert ctx != b.ffi.NULL
         ctx = b.ffi.gc(ctx, b.lib.SSL_CTX_free)
         ssl = b.lib.SSL_new(ctx)
         ssl = b.ffi.gc(ssl, b.lib.SSL_free)
@@ -59,24 +58,10 @@ class TestOpenSSL(object):
         assert resp == expected_options
         assert b.lib.SSL_get_options(ssl) == expected_options
 
-    def test_ssl_mode(self):
-        # Test that we're properly handling 32-bit unsigned on all platforms.
-        b = Binding()
-        assert b.lib.SSL_OP_ALL > 0
-        ctx = b.lib.SSL_CTX_new(b.lib.TLSv1_method())
-        ctx = b.ffi.gc(ctx, b.lib.SSL_CTX_free)
-        ssl = b.lib.SSL_new(ctx)
-        ssl = b.ffi.gc(ssl, b.lib.SSL_free)
-        current_options = b.lib.SSL_get_mode(ssl)
-        resp = b.lib.SSL_set_mode(ssl, b.lib.SSL_OP_ALL)
-        expected_options = current_options | b.lib.SSL_OP_ALL
-        assert resp == expected_options
-        assert b.lib.SSL_get_mode(ssl) == expected_options
-
     def test_conditional_removal(self):
         b = Binding()
 
-        if b.lib.CRYPTOGRAPHY_OPENSSL_110_OR_GREATER:
+        if not rust_openssl.CRYPTOGRAPHY_IS_LIBRESSL:
             assert b.lib.TLS_ST_OK
         else:
             with pytest.raises(AttributeError):
@@ -89,26 +74,46 @@ class TestOpenSSL(object):
             b.lib.EVP_F_EVP_ENCRYPTFINAL_EX,
             b.lib.EVP_R_DATA_NOT_MULTIPLE_OF_BLOCK_LENGTH,
             b"",
-            -1
+            -1,
         )
         with pytest.raises(InternalError) as exc_info:
-            _openssl_assert(b.lib, False)
+            _openssl_assert(False)
 
         error = exc_info.value.err_code[0]
-        assert error.code == 101183626
         assert error.lib == b.lib.ERR_LIB_EVP
-        assert error.func == b.lib.EVP_F_EVP_ENCRYPTFINAL_EX
         assert error.reason == b.lib.EVP_R_DATA_NOT_MULTIPLE_OF_BLOCK_LENGTH
-        assert b"data not multiple of block length" in error.reason_text
+        if not (
+            rust_openssl.CRYPTOGRAPHY_IS_BORINGSSL
+            or rust_openssl.CRYPTOGRAPHY_IS_AWSLC
+        ):
+            assert b"data not multiple of block length" in error.reason_text
 
-    def test_check_startup_errors_are_allowed(self):
+    def test_version_mismatch(self):
+        with pytest.raises(ImportError):
+            _verify_package_version("nottherightversion")
+
+    def test_rust_internal_error(self):
+        with pytest.raises(InternalError) as exc_info:
+            rust_openssl.raise_openssl_error()
+
+        assert len(exc_info.value.err_code) == 0
+
         b = Binding()
         b.lib.ERR_put_error(
             b.lib.ERR_LIB_EVP,
             b.lib.EVP_F_EVP_ENCRYPTFINAL_EX,
             b.lib.EVP_R_DATA_NOT_MULTIPLE_OF_BLOCK_LENGTH,
             b"",
-            -1
+            -1,
         )
-        b._register_osrandom_engine()
-        assert _consume_errors(b.lib) == []
+        with pytest.raises(InternalError) as exc_info:
+            rust_openssl.raise_openssl_error()
+
+        error = exc_info.value.err_code[0]
+        assert error.lib == b.lib.ERR_LIB_EVP
+        assert error.reason == b.lib.EVP_R_DATA_NOT_MULTIPLE_OF_BLOCK_LENGTH
+        if not (
+            rust_openssl.CRYPTOGRAPHY_IS_BORINGSSL
+            or rust_openssl.CRYPTOGRAPHY_IS_AWSLC
+        ):
+            assert b"data not multiple of block length" in error.reason_text

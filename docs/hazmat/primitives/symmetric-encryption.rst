@@ -11,16 +11,21 @@ where the sender and receiver both use the same secret key. Note that symmetric
 encryption is **not** sufficient for most applications because it only
 provides secrecy but not authenticity. That means an attacker can't see the
 message but an attacker can create bogus messages and force the application to
-decrypt them.
+decrypt them. In many contexts, a lack of authentication on encrypted messages
+can result in a loss of secrecy as well.
 
-For this reason it is **strongly** recommended to combine encryption with a
-message authentication code, such as :doc:`HMAC </hazmat/primitives/mac/hmac>`,
-in an "encrypt-then-MAC" formulation as `described by Colin Percival`_.
-``cryptography`` includes a recipe named :doc:`/fernet` that does this for you.
-**To minimize the risk of security issues you should evaluate Fernet to see if
-it fits your needs before implementing anything using this module.**
+For this reason in nearly all contexts it is necessary to combine encryption
+with a message authentication code, such as
+:doc:`HMAC </hazmat/primitives/mac/hmac>`, in an "encrypt-then-MAC"
+formulation as `described by Colin Percival`_. ``cryptography`` includes a
+recipe named :doc:`/fernet` that does this for you. **To minimize the risk of
+security issues you should evaluate Fernet to see if it fits your needs before
+implementing anything using this module.** If :doc:`/fernet` is not
+appropriate for your use-case then you may still benefit from
+:doc:`/hazmat/primitives/aead` which combines encryption and authentication
+securely.
 
-.. class:: Cipher(algorithm, mode, backend)
+.. class:: Cipher(algorithm, mode)
 
     Cipher objects combine an algorithm such as
     :class:`~cryptography.hazmat.primitives.ciphers.algorithms.AES` with a
@@ -33,31 +38,25 @@ it fits your needs before implementing anything using this module.**
 
         >>> import os
         >>> from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-        >>> from cryptography.hazmat.backends import default_backend
-        >>> backend = default_backend()
         >>> key = os.urandom(32)
         >>> iv = os.urandom(16)
-        >>> cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=backend)
+        >>> cipher = Cipher(algorithms.AES(key), modes.CBC(iv))
         >>> encryptor = cipher.encryptor()
         >>> ct = encryptor.update(b"a secret message") + encryptor.finalize()
         >>> decryptor = cipher.decryptor()
         >>> decryptor.update(ct) + decryptor.finalize()
-        'a secret message'
+        b'a secret message'
 
-    :param algorithms: A
+    :param algorithm: A
         :class:`~cryptography.hazmat.primitives.ciphers.CipherAlgorithm`
         instance such as those described
         :ref:`below <symmetric-encryption-algorithms>`.
     :param mode: A :class:`~cryptography.hazmat.primitives.ciphers.modes.Mode`
         instance such as those described
         :ref:`below <symmetric-encryption-modes>`.
-    :param backend: A
-        :class:`~cryptography.hazmat.backends.interfaces.CipherBackend`
-        instance.
 
     :raises cryptography.exceptions.UnsupportedAlgorithm: This is raised if the
-        provided ``backend`` does not implement
-        :class:`~cryptography.hazmat.backends.interfaces.CipherBackend`
+        provided ``algorithm`` is unsupported.
 
     .. method:: encryptor()
 
@@ -65,8 +64,8 @@ it fits your needs before implementing anything using this module.**
             :class:`~cryptography.hazmat.primitives.ciphers.CipherContext`
             instance.
 
-        If the backend doesn't support the requested combination of ``cipher``
-        and ``mode`` an :class:`~cryptography.exceptions.UnsupportedAlgorithm`
+        If the requested combination of ``algorithm`` and ``mode`` is
+        unsupported an :class:`~cryptography.exceptions.UnsupportedAlgorithm`
         exception will be raised.
 
     .. method:: decryptor()
@@ -75,8 +74,8 @@ it fits your needs before implementing anything using this module.**
             :class:`~cryptography.hazmat.primitives.ciphers.CipherContext`
             instance.
 
-        If the backend doesn't support the requested combination of ``cipher``
-        and ``mode`` an :class:`~cryptography.exceptions.UnsupportedAlgorithm`
+        If the requested combination of ``algorithm`` and ``mode`` is
+        unsupported an :class:`~cryptography.exceptions.UnsupportedAlgorithm`
         exception will be raised.
 
 .. _symmetric-encryption-algorithms:
@@ -92,8 +91,31 @@ Algorithms
     AES is both fast, and cryptographically strong. It is a good default
     choice for encryption.
 
-    :param bytes key: The secret key. This must be kept secret. Either ``128``,
+    :param key: The secret key. This must be kept secret. Either ``128``,
         ``192``, or ``256`` :term:`bits` long.
+    :type key: :term:`bytes-like`
+
+.. class:: AES128(key)
+
+    .. versionadded:: 38.0.0
+
+    An AES class that only accepts 128 bit keys. This is identical to the
+    standard ``AES`` class except that it will only accept a single key length.
+
+    :param key: The secret key. This must be kept secret. ``128``
+        :term:`bits` long.
+    :type key: :term:`bytes-like`
+
+.. class:: AES256(key)
+
+    .. versionadded:: 38.0.0
+
+    An AES class that only accepts 256 bit keys. This is identical to the
+    standard ``AES`` class except that it will only accept a single key length.
+
+    :param key: The secret key. This must be kept secret. ``256``
+        :term:`bits` long.
+    :type key: :term:`bytes-like`
 
 .. class:: Camellia(key)
 
@@ -101,10 +123,11 @@ Algorithms
     It is considered to have comparable security and performance to AES but
     is not as widely studied or deployed.
 
-    :param bytes key: The secret key. This must be kept secret. Either ``128``,
+    :param key: The secret key. This must be kept secret. Either ``128``,
         ``192``, or ``256`` :term:`bits` long.
+    :type key: :term:`bytes-like`
 
-.. class:: ChaCha20(key)
+.. class:: ChaCha20(key, nonce)
 
     .. versionadded:: 2.1
 
@@ -117,43 +140,59 @@ Algorithms
         :class:`~cryptography.hazmat.primitives.ciphers.aead.ChaCha20Poly1305`
         does this for you.
 
-    ChaCha20 is a stream cipher used in several IETF protocols. It is
-    standardized in :rfc:`7539`.
+    ChaCha20 is a stream cipher used in several IETF protocols. While it is
+    standardized in :rfc:`7539`, **this implementation is not RFC-compliant**.
+    This implementation uses a ``64`` :term:`bits` counter and a ``64``
+    :term:`bits` nonce as defined in the `original version`_ of the algorithm,
+    rather than the ``32/96`` counter/nonce split defined in :rfc:`7539`.
 
-    :param bytes key: The secret key. This must be kept secret. ``256``
+    :param key: The secret key. This must be kept secret. ``256``
         :term:`bits` (32 bytes) in length.
+    :type key: :term:`bytes-like`
 
-    :param bytes nonce: Should be unique, a :term:`nonce`. It is
-        critical to never reuse a ``nonce`` with a given key.  Any reuse of a
+    :param nonce: Should be unique, a :term:`nonce`. It is
+        critical to never reuse a ``nonce`` with a given key. Any reuse of a
         nonce with the same key compromises the security of every message
         encrypted with that key. The nonce does not need to be kept secret
         and may be included with the ciphertext. This must be ``128``
-        :term:`bits` in length.
+        :term:`bits` in length. The 128-bit value is a concatenation of the
+        8-byte little-endian counter and the 8-byte nonce.
+    :type nonce: :term:`bytes-like`
 
-        .. note::
+    .. note::
 
-            In :rfc:`7539` the nonce is defined as a 96-bit value that is later
-            concatenated with a block counter (encoded as a 32-bit
-            little-endian). If you have a separate nonce and block counter
-            you will need to concatenate it yourself before passing it. For
-            example, if you have an initial block counter of 2 and a 96-bit
-            nonce the concatenated nonce would be
-            ``struct.pack("<i", 2) + nonce``.
+        In the `original version`_ of the algorithm the nonce is defined as a
+        64-bit value that is later concatenated with a block counter (encoded
+        as a 64-bit little-endian). If you have a separate nonce and block
+        counter you will need to concatenate it yourself before passing it.
+        For example, if you have an initial block counter of 2 and a 64-bit
+        nonce the concatenated nonce would be
+        ``struct.pack("<Q", 2) + nonce``.
+
 
     .. doctest::
 
+        >>> import struct, os
         >>> from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-        >>> from cryptography.hazmat.backends import default_backend
-        >>> nonce = os.urandom(16)
-        >>> algorithm = algorithms.ChaCha20(key, nonce)
-        >>> cipher = Cipher(algorithm, mode=None, backend=default_backend())
+        >>> key = os.urandom(32)
+        >>> nonce = os.urandom(8)
+        >>> counter = 0
+        >>> full_nonce = struct.pack("<Q", counter) + nonce
+        >>> algorithm = algorithms.ChaCha20(key, full_nonce)
+        >>> cipher = Cipher(algorithm, mode=None)
         >>> encryptor = cipher.encryptor()
         >>> ct = encryptor.update(b"a secret message")
         >>> decryptor = cipher.decryptor()
         >>> decryptor.update(ct)
-        'a secret message'
+        b'a secret message'
 
 .. class:: TripleDES(key)
+
+    .. warning::
+
+        This algorithm has been deprecated and moved to the :doc:`/hazmat/decrepit/index`
+        module. If you need to continue using it then update your code to
+        use the new module path. It will be removed from this namespace in 48.0.0.
 
     Triple DES (Data Encryption Standard), sometimes referred to as 3DES, is a
     block cipher standardized by NIST. Triple DES has known crypto-analytic
@@ -161,35 +200,28 @@ Algorithms
     Nonetheless, Triple DES is not recommended for new applications because it
     is incredibly slow; old applications should consider moving away from it.
 
-    :param bytes key: The secret key. This must be kept secret. Either ``64``,
+    :param key: The secret key. This must be kept secret. Either ``64``,
         ``128``, or ``192`` :term:`bits` long. DES only uses ``56``, ``112``,
         or ``168`` bits of the key as there is a parity byte in each component
         of the key.  Some writing refers to there being up to three separate
         keys that are each ``56`` bits long, they can simply be concatenated
         to produce the full key.
+    :type key: :term:`bytes-like`
 
-.. class:: CAST5(key)
+.. class:: SM4(key)
 
-    .. versionadded:: 0.2
+    .. versionadded:: 35.0.0
 
-    CAST5 (also known as CAST-128) is a block cipher approved for use in the
-    Canadian government by the `Communications Security Establishment`_. It is
-    a variable key length cipher and supports keys from 40-128 :term:`bits` in
-    length.
+    SM4 is a block cipher developed by the Chinese Government and standardized
+    in the GB/T 32907-2016. It is used in the Chinese WAPI
+    (Wired Authentication and Privacy Infrastructure) standard. (An English
+    description is available at `draft-ribose-cfrg-sm4-10`_.) This block
+    cipher should be used for compatibility purposes where required and is
+    not otherwise recommended for use.
 
-    :param bytes key: The secret key, This must be kept secret. 40 to 128
-        :term:`bits` in length in increments of 8 bits.
-
-.. class:: SEED(key)
-
-    .. versionadded:: 0.4
-
-    SEED is a block cipher developed by the Korea Information Security Agency
-    (KISA). It is defined in :rfc:`4269` and is used broadly throughout South
-    Korean industry, but rarely found elsewhere.
-
-    :param bytes key: The secret key. This must be kept secret. ``128``
+    :param key: The secret key. This must be kept secret. ``128``
         :term:`bits` in length.
+    :type key: :term:`bytes-like`
 
 Weak ciphers
 ------------
@@ -200,47 +232,33 @@ Weak ciphers
     applications should avoid their use and existing applications should
     strongly consider migrating away.
 
-.. class:: Blowfish(key)
-
-    Blowfish is a block cipher developed by Bruce Schneier. It is known to be
-    susceptible to attacks when using weak keys. The author has recommended
-    that users of Blowfish move to newer algorithms such as :class:`AES`.
-
-    :param bytes key: The secret key. This must be kept secret. 32 to 448
-        :term:`bits` in length in increments of 8 bits.
-
 .. class:: ARC4(key)
+
+    .. warning::
+
+        This algorithm has been deprecated and moved to the :doc:`/hazmat/decrepit/index`
+        module. If you need to continue using it then update your code to
+        use the new module path. It will be removed from this namespace in 48.0.0.
 
     ARC4 (Alleged RC4) is a stream cipher with serious weaknesses in its
     initial stream output. Its use is strongly discouraged. ARC4 does not use
     mode constructions.
 
-    :param bytes key: The secret key. This must be kept secret. Either ``40``,
+    :param key: The secret key. This must be kept secret. Either ``40``,
         ``56``, ``64``, ``80``, ``128``, ``192``, or ``256`` :term:`bits` in
         length.
+    :type key: :term:`bytes-like`
 
     .. doctest::
 
         >>> from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-        >>> from cryptography.hazmat.backends import default_backend
         >>> algorithm = algorithms.ARC4(key)
-        >>> cipher = Cipher(algorithm, mode=None, backend=default_backend())
+        >>> cipher = Cipher(algorithm, mode=None)
         >>> encryptor = cipher.encryptor()
         >>> ct = encryptor.update(b"a secret message")
         >>> decryptor = cipher.decryptor()
         >>> decryptor.update(ct)
-        'a secret message'
-
-.. class:: IDEA(key)
-
-    IDEA (`International Data Encryption Algorithm`_) is a block cipher created
-    in 1991. It is an optional component of the `OpenPGP`_ standard. This cipher
-    is susceptible to attacks when using weak keys. It is recommended that you
-    do not use this cipher for new applications.
-
-    :param bytes key: The secret key. This must be kept secret. ``128``
-        :term:`bits` in length.
-
+        b'a secret message'
 
 .. _symmetric-encryption-modes:
 
@@ -256,13 +274,14 @@ Modes
 
     **Padding is required when using this mode.**
 
-    :param bytes initialization_vector: Must be :doc:`random bytes
+    :param initialization_vector: Must be :doc:`random bytes
         </random-numbers>`. They do not need to be kept secret and they can be
         included in a transmitted message. Must be the same number of bytes as
         the ``block_size`` of the cipher. Each time something is encrypted a
         new ``initialization_vector`` should be generated. Do not reuse an
         ``initialization_vector`` with a given ``key``, and particularly do not
         use a constant ``initialization_vector``.
+    :type initialization_vector: :term:`bytes-like`
 
     A good construction looks like:
 
@@ -278,7 +297,7 @@ Modes
     .. doctest::
 
         >>> from cryptography.hazmat.primitives.ciphers.modes import CBC
-        >>> iv = "a" * 16
+        >>> iv = b"a" * 16
         >>> mode = CBC(iv)
 
 
@@ -295,12 +314,13 @@ Modes
 
     **This mode does not require padding.**
 
-    :param bytes nonce: Should be unique, a :term:`nonce`. It is
+    :param nonce: Should be unique, a :term:`nonce`. It is
         critical to never reuse a ``nonce`` with a given key.  Any reuse of a
         nonce with the same key compromises the security of every message
         encrypted with that key. Must be the same number of bytes as the
         ``block_size`` of the cipher with a given key. The nonce does not need
         to be kept secret and may be included with the ciphertext.
+    :type nonce: :term:`bytes-like`
 
 .. class:: OFB(initialization_vector)
 
@@ -309,11 +329,12 @@ Modes
 
     **This mode does not require padding.**
 
-    :param bytes initialization_vector: Must be :doc:`random bytes
+    :param initialization_vector: Must be :doc:`random bytes
         </random-numbers>`. They do not need to be kept secret and they can be
         included in a transmitted message. Must be the same number of bytes as
         the ``block_size`` of the cipher. Do not reuse an
         ``initialization_vector`` with a given ``key``.
+    :type initialization_vector: :term:`bytes-like`
 
 .. class:: CFB(initialization_vector)
 
@@ -322,11 +343,12 @@ Modes
 
     **This mode does not require padding.**
 
-    :param bytes initialization_vector: Must be :doc:`random bytes
+    :param initialization_vector: Must be :doc:`random bytes
         </random-numbers>`. They do not need to be kept secret and they can be
         included in a transmitted message. Must be the same number of bytes as
         the ``block_size`` of the cipher. Do not reuse an
         ``initialization_vector`` with a given ``key``.
+    :type initialization_vector: :term:`bytes-like`
 
 .. class:: CFB8(initialization_vector)
 
@@ -336,11 +358,12 @@ Modes
 
     **This mode does not require padding.**
 
-    :param bytes initialization_vector: Must be :doc:`random bytes
+    :param initialization_vector: Must be :doc:`random bytes
         </random-numbers>`. They do not need to be kept secret and they can be
         included in a transmitted message. Must be the same number of bytes as
         the ``block_size`` of the cipher. Do not reuse an
         ``initialization_vector`` with a given ``key``.
+    :type initialization_vector: :term:`bytes-like`
 
 .. class:: GCM(initialization_vector, tag=None, min_tag_length=16)
 
@@ -368,21 +391,22 @@ Modes
 
     **This mode does not require padding.**
 
-    :param bytes initialization_vector: Must be unique, a :term:`nonce`.
+    :param initialization_vector: Must be unique, a :term:`nonce`.
         They do not need to be kept secret and they can be included in a
         transmitted message. NIST `recommends a 96-bit IV length`_ for
         performance critical situations but it can be up to 2\ :sup:`64` - 1
         :term:`bits`. Do not reuse an ``initialization_vector`` with a given
         ``key``.
+    :type initialization_vector: :term:`bytes-like`
 
     .. note::
 
         Cryptography will generate a 128-bit tag when finalizing encryption.
         You can shorten a tag by truncating it to the desired length but this
-        is **not recommended** as it lowers the security margins of the
-        authentication (`NIST SP-800-38D`_ recommends 96-:term:`bits` or
-        greater).  Applications wishing to allow truncation must pass the
-        ``min_tag_length`` parameter.
+        is **not recommended** as it makes it easier to forge messages, and
+        also potentially leaks the key (`NIST SP-800-38D`_ recommends
+        96-:term:`bits` or greater).  Applications wishing to allow truncation
+        can pass the ``min_tag_length`` parameter.
 
         .. versionchanged:: 0.5
 
@@ -395,14 +419,12 @@ Modes
         :meth:`~cryptography.hazmat.primitives.ciphers.AEADDecryptionContext.finalize_with_tag`.
         Otherwise, the tag is mandatory.
 
-    :param bytes min_tag_length: The minimum length ``tag`` must be. By default
+    :param int min_tag_length: The minimum length ``tag`` must be. By default
         this is ``16``, meaning tag truncation is not allowed. Allowing tag
         truncation is strongly discouraged for most applications.
 
-    :raises ValueError: This is raised if ``len(tag) < min_tag_length``.
-
-    :raises NotImplementedError: This is raised if the version of the OpenSSL
-        backend used is 1.0.1 or earlier.
+    :raises ValueError: This is raised if ``len(tag) < min_tag_length`` or the
+        ``initialization_vector`` is too short.
 
     An example of securely encrypting and decrypting data with ``AES`` in the
     ``GCM`` mode looks like:
@@ -411,7 +433,6 @@ Modes
 
         import os
 
-        from cryptography.hazmat.backends import default_backend
         from cryptography.hazmat.primitives.ciphers import (
             Cipher, algorithms, modes
         )
@@ -425,7 +446,6 @@ Modes
             encryptor = Cipher(
                 algorithms.AES(key),
                 modes.GCM(iv),
-                backend=default_backend()
             ).encryptor()
 
             # associated_data will be authenticated but not encrypted,
@@ -444,7 +464,6 @@ Modes
             decryptor = Cipher(
                 algorithms.AES(key),
                 modes.GCM(iv, tag),
-                backend=default_backend()
             ).decryptor()
 
             # We put associated_data back in or the tag will fail to verify
@@ -471,7 +490,7 @@ Modes
 
     .. testoutput::
 
-        a secret message!
+        b'a secret message!'
 
 .. class:: XTS(tweak)
 
@@ -494,11 +513,11 @@ Modes
 
     **This mode does not require padding.**
 
-    :param bytes tweak: The tweak is a 16 byte value typically derived from
+    :param tweak: The tweak is a 16 byte value typically derived from
         something like the disk sector number. A given ``(tweak, key)`` pair
         should not be reused, although doing so is less catastrophic than
         in CTR mode.
-
+    :type tweak: :term:`bytes-like`
 
 Insecure modes
 --------------
@@ -543,7 +562,8 @@ Interfaces
 
     .. method:: update(data)
 
-        :param bytes data: The data you wish to pass into the context.
+        :param data: The data you wish to pass into the context.
+        :type data: :term:`bytes-like`
         :return bytes: Returns the data that was encrypted or decrypted.
         :raises cryptography.exceptions.AlreadyFinalized: See :meth:`finalize`
 
@@ -566,24 +586,21 @@ Interfaces
             requirement and you will be making many small calls to
             ``update_into``.
 
-        :param bytes data: The data you wish to pass into the context.
+        :param data: The data you wish to pass into the context.
+        :type data: :term:`bytes-like`
         :param buf: A writable Python buffer that the data will be written
             into. This buffer should be ``len(data) + n - 1`` bytes where ``n``
             is the block size (in bytes) of the cipher and mode combination.
         :return int: Number of bytes written.
-        :raises NotImplementedError: This is raised if the version of ``cffi``
-            used is too old (this can happen on older PyPy releases).
         :raises ValueError: This is raised if the supplied buffer is too small.
 
         .. doctest::
 
             >>> import os
             >>> from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-            >>> from cryptography.hazmat.backends import default_backend
-            >>> backend = default_backend()
             >>> key = os.urandom(32)
             >>> iv = os.urandom(16)
-            >>> cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=backend)
+            >>> cipher = Cipher(algorithms.AES(key), modes.CBC(iv))
             >>> encryptor = cipher.encryptor()
             >>> # the buffer needs to be at least len(data) + n - 1 where n is cipher/mode block size in bytes
             >>> buf = bytearray(31)
@@ -594,7 +611,7 @@ Interfaces
             >>> len_decrypted = decryptor.update_into(ct, buf)
             >>> # get the plaintext from the buffer reading only the bytes written (len_decrypted)
             >>> bytes(buf[:len_decrypted]) + decryptor.finalize()
-            'a secret message'
+            b'a secret message'
 
     .. method:: finalize()
 
@@ -605,6 +622,27 @@ Interfaces
         Once ``finalize`` is called this object can no longer be used and
         :meth:`update` and :meth:`finalize` will raise an
         :class:`~cryptography.exceptions.AlreadyFinalized` exception.
+
+    .. method:: reset_nonce(nonce)
+
+        .. versionadded:: 43.0.0
+
+        This method allows changing the nonce for an already existing context.
+        Normally the nonce is set when the context is created and internally
+        incremented as data as passed. However, in some scenarios the same key
+        is used repeatedly but the nonce changes non-sequentially (e.g. ``QUIC``),
+        which requires updating the context with the new nonce.
+
+        This method only works for contexts using
+        :class:`~cryptography.hazmat.primitives.ciphers.algorithms.ChaCha20` or
+        :class:`~cryptography.hazmat.primitives.ciphers.modes.CTR` mode.
+
+        :param nonce: The nonce to update the context with.
+        :type data: :term:`bytes-like`
+        :raises cryptography.exceptions.UnsupportedAlgorithm: If the
+            algorithm does not support updating the nonce.
+        :raises ValueError: If the nonce is not the correct length for the
+            algorithm.
 
 .. class:: AEADCipherContext
 
@@ -628,7 +666,8 @@ Interfaces
 
     .. method:: authenticate_additional_data(data)
 
-        :param bytes data: Any data you wish to authenticate but not encrypt.
+        :param data: Any data you wish to authenticate but not encrypt.
+        :type data: :term:`bytes-like`
         :raises: :class:`~cryptography.exceptions.AlreadyFinalized`
 
 .. class:: AEADEncryptionContext
@@ -661,17 +700,12 @@ Interfaces
 
     .. method:: finalize_with_tag(tag)
 
-        .. note::
-
-            This method is not supported when compiled against OpenSSL 1.0.1.
-
         :param bytes tag: The tag bytes to verify after decryption.
         :return bytes: Returns the remainder of the data.
         :raises ValueError: This is raised when the data provided isn't
             a multiple of the algorithm's block size, if ``min_tag_length`` is
             less than 4, or if ``len(tag) < min_tag_length``.
-        :raises NotImplementedError: This is raised if the version of the
-            OpenSSL backend used is 1.0.1 or earlier.
+            ``min_tag_length`` is an argument to the ``GCM`` constructor.
 
         If the authentication tag was not already supplied to the constructor
         of the :class:`~cryptography.hazmat.primitives.ciphers.modes.GCM` mode
@@ -722,9 +756,6 @@ Interfaces used by the symmetric cipher modes described in
         This should be the standard shorthand name for the mode, for example
         Cipher-Block Chaining mode is "CBC".
 
-        The name may be used by a backend to influence the operation of a
-        cipher in conjunction with the algorithm's name.
-
     .. method:: validate_for_algorithm(algorithm)
 
         :param cryptography.hazmat.primitives.ciphers.CipherAlgorithm algorithm:
@@ -745,7 +776,7 @@ Interfaces used by the symmetric cipher modes described in
 
     .. attribute:: initialization_vector
 
-        :type: bytes
+        :type: :term:`bytes-like`
 
         Exact requirements of the initialization are described by the
         documentation of individual modes.
@@ -757,7 +788,7 @@ Interfaces used by the symmetric cipher modes described in
 
     .. attribute:: nonce
 
-        :type: bytes
+        :type: :term:`bytes-like`
 
         Exact requirements of the nonce are described by the documentation of
         individual modes.
@@ -769,7 +800,7 @@ Interfaces used by the symmetric cipher modes described in
 
     .. attribute:: tag
 
-        :type: bytes
+        :type: :term:`bytes-like`
 
         Exact requirements of the tag are described by the documentation of
         individual modes.
@@ -783,7 +814,7 @@ Interfaces used by the symmetric cipher modes described in
 
     .. attribute:: tweak
 
-        :type: bytes
+        :type: :term:`bytes-like`
 
         Exact requirements of the tweak are described by the documentation of
         individual modes.
@@ -801,13 +832,15 @@ Exceptions
 
 
 
-.. _`described by Colin Percival`: http://www.daemonology.net/blog/2009-06-11-cryptographic-right-answers.html
-.. _`recommends a 96-bit IV length`: https://csrc.nist.gov/publications/detail/sp/800-38d/final
+.. _`described by Colin Percival`: https://www.daemonology.net/blog/2009-06-11-cryptographic-right-answers.html
+.. _`recommends a 96-bit IV length`: https://csrc.nist.gov/pubs/sp/800/38/d/final
 .. _`NIST SP-800-38D`: https://csrc.nist.gov/publications/detail/sp/800-38d/final
 .. _`Communications Security Establishment`: https://www.cse-cst.gc.ca
-.. _`encrypt`: https://ssd.eff.org/en/module/what-encryption
-.. _`CRYPTREC`: https://www.cryptrec.go.jp/english/
-.. _`significant patterns in the output`: https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#Electronic_Codebook_.28ECB.29
+.. _`encrypt`: https://ssd.eff.org/en/module/what-should-i-know-about-encryption
+.. _`CRYPTREC`: https://www.cryptrec.go.jp/en/
+.. _`original version`: https://en.wikipedia.org/wiki/Salsa20#ChaCha_variant
+.. _`significant patterns in the output`: https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#Electronic_codebook_(ECB)
 .. _`International Data Encryption Algorithm`: https://en.wikipedia.org/wiki/International_Data_Encryption_Algorithm
-.. _`OpenPGP`: http://openpgp.org
+.. _`OpenPGP`: https://www.openpgp.org/
 .. _`disk encryption`: https://en.wikipedia.org/wiki/Disk_encryption_theory#XTS
+.. _`draft-ribose-cfrg-sm4-10`: https://datatracker.ietf.org/doc/html/draft-ribose-cfrg-sm4-10

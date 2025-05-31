@@ -61,10 +61,6 @@ Glossary
         aren't distinguishable without knowing the encryption key. This is
         considered a basic, necessary property for a working encryption system.
 
-    text
-        This type corresponds to ``unicode`` on Python 2 and ``str`` on Python
-        3.  This is equivalent to ``six.text_type``.
-
     nonce
         A nonce is a **n**\ umber used **once**. Nonces are used in many
         cryptographic protocols. Generally, a nonce does not have to be secret
@@ -94,10 +90,34 @@ Glossary
         bit key, you can calculate the number of bytes by dividing by 8. 128
         divided by 8 is 16, so a 128 bit key is a 16 byte key.
 
+    bytes-like
+        A bytes-like object contains binary data and supports the
+        `buffer protocol`_. This includes ``bytes``, ``bytearray``, and
+        ``memoryview`` objects. It is :term:`unsafe` to pass a mutable object
+        (e.g., a ``bytearray`` or other implementer of the buffer protocol)
+        and to `mutate it concurrently`_ with the operation it has been
+        provided for.
+
     U-label
         The presentational unicode form of an internationalized domain
         name. U-labels use unicode characters outside the ASCII range and
         are encoded as A-labels when stored in certificates.
 
+    unsafe
+        This is a term used to describe an operation where the user must
+        ensure that the input is correct. Failure to do so can result in
+        crashes, hangs, and other security issues.
+    
+    thread safety
+        All immutable objects in ``cryptography`` are safe to use in
+        multi-threaded environments. This means they can be shared across
+        threads without requiring additional synchronization. Mutable objects,
+        such as hash contexts, can also be shared, but concurrent modification
+        may lead to exceptions or incorrect results. When working with
+        cryptographic operations in a multi-threaded application, ensure that
+        any mutable objects are used in a thread-safe manner.
+
 .. _`hardware security module`: https://en.wikipedia.org/wiki/Hardware_security_module
 .. _`idna`: https://pypi.org/project/idna/
+.. _`buffer protocol`: https://docs.python.org/3/c-api/buffer.html
+.. _`mutate it concurrently`: https://alexgaynor.net/2022/oct/23/buffers-on-the-edge/

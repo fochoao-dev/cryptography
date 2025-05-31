@@ -12,3 +12,7 @@ htmlcov/
 .eggs/
 *.py[cdo]
 .hypothesis/
+target/
+.rust-cov/
+*.lcov
+*.profdata

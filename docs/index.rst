@@ -14,20 +14,31 @@ key derivation functions. For example, to encrypt something with
     >>> f = Fernet(key)
     >>> token = f.encrypt(b"A really secret message. Not for prying eyes.")
     >>> token
-    '...'
+    b'...'
     >>> f.decrypt(token)
-    'A really secret message. Not for prying eyes.'
+    b'A really secret message. Not for prying eyes.'
 
 If you are interested in learning more about the field of cryptography, we
-recommend `Crypto 101, by Laurens Van Houtven`_.
+recommend `Crypto 101, by Laurens Van Houtven`_ and `The Cryptopals Crypto
+Challenges`_.
 
 Installation
 ------------
-You can install ``cryptography`` with ``pip``:
 
-.. code-block:: console
+To install ``cryptography``:
 
-    $ pip install cryptography
+.. tab:: ``pip``
+
+    .. code-block:: console
+
+        $ pip install cryptography
+
+.. tab:: ``uv``
+
+    .. code-block:: console
+
+        $ uv add cryptography
+
 
 See :doc:`Installation <installation>` for more information.
 
@@ -66,8 +77,7 @@ hazmat layer only when necessary.
     hazmat/primitives/index
     exceptions
     random-numbers
-    hazmat/backends/index
-    hazmat/bindings/index
+    hazmat/decrepit/index
 
 .. toctree::
     :maxdepth: 2
@@ -77,6 +87,7 @@ hazmat layer only when necessary.
     changelog
     faq
     development/index
+    openssl
     security
     limitations
     api-stability
@@ -92,3 +103,4 @@ hazmat layer only when necessary.
     :doc:`get in touch </community>`.
 
 .. _`Crypto 101, by Laurens Van Houtven`: https://www.crypto101.io/
+.. _`The Cryptopals Crypto Challenges`: https://cryptopals.com/

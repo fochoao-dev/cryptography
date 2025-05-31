@@ -2,17 +2,26 @@
 # 2.0, and the BSD License. See the LICENSE file in the root of this repository
 # for complete details.
 
-from __future__ import absolute_import, division, print_function
+from __future__ import annotations
 
+import os
+import platform
 import sys
-from distutils.ccompiler import new_compiler
-from distutils.dist import Distribution
 
 from cffi import FFI
 
+# Load the cryptography __about__ to get the current package version
+base_src = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+about: dict = {}
+with open(os.path.join(base_src, "cryptography", "__about__.py")) as f:
+    exec(f.read(), about)
 
-def build_ffi_for_binding(module_name, module_prefix, modules, libraries=[],
-                          extra_compile_args=[], extra_link_args=[]):
+
+def build_ffi_for_binding(
+    module_name: str,
+    module_prefix: str,
+    modules: list[str],
+):
     """
     Modules listed in ``modules`` should have the following attributes:
 
@@ -36,53 +45,40 @@ def build_ffi_for_binding(module_name, module_prefix, modules, libraries=[],
         includes.append(module.INCLUDES)
         customizations.append(module.CUSTOMIZATIONS)
 
-    verify_source = "\n".join(
-        includes +
-        customizations
-    )
-    ffi = build_ffi(
+    verify_source = "\n".join(includes + customizations)
+    return build_ffi(
         module_name,
         cdef_source="\n".join(types + functions),
         verify_source=verify_source,
-        libraries=libraries,
-        extra_compile_args=extra_compile_args,
-        extra_link_args=extra_link_args,
     )
 
-    return ffi
 
-
-def build_ffi(module_name, cdef_source, verify_source, libraries=[],
-              extra_compile_args=[], extra_link_args=[]):
+def build_ffi(
+    module_name: str,
+    cdef_source: str,
+    verify_source: str,
+):
     ffi = FFI()
+    # Always add the CRYPTOGRAPHY_PACKAGE_VERSION to the shared object
+    cdef_source += "\nstatic const char *const CRYPTOGRAPHY_PACKAGE_VERSION;"
+    verify_source += '\n#define CRYPTOGRAPHY_PACKAGE_VERSION "{}"'.format(
+        about["__version__"]
+    )
+    if platform.python_implementation() == "PyPy":
+        verify_source += r"""
+int Cryptography_make_openssl_module(void) {
+    int result;
+
+    Py_BEGIN_ALLOW_THREADS
+    result = cffi_start_python();
+    Py_END_ALLOW_THREADS
+
+    return result;
+}
+"""
     ffi.cdef(cdef_source)
     ffi.set_source(
         module_name,
         verify_source,
-        libraries=libraries,
-        extra_compile_args=extra_compile_args,
-        extra_link_args=extra_link_args,
     )
     return ffi
-
-
-def extra_link_args(compiler_type):
-    if compiler_type == 'msvc':
-        # Enable NX and ASLR for Windows builds on MSVC. These are enabled by
-        # default on Python 3.3+ but not on 2.x.
-        return ['/NXCOMPAT', '/DYNAMICBASE']
-    else:
-        return []
-
-
-def compiler_type():
-    """
-    Gets the compiler type from distutils. On Windows with MSVC it will be
-    "msvc". On macOS and linux it is "unix".
-    """
-    dist = Distribution()
-    dist.parse_config_files()
-    cmd = dist.get_command_obj('build')
-    cmd.ensure_finalized()
-    compiler = new_compiler(compiler=cmd.compiler)
-    return compiler.compiler_type

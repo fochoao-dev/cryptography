@@ -2,13 +2,9 @@
 # 2.0, and the BSD License. See the LICENSE file in the root of this repository
 # for complete details.
 
-from __future__ import absolute_import, division, print_function
-
 __all__ = [
-    "__title__", "__summary__", "__uri__", "__version__", "__author__",
-    "__email__", "__license__", "__copyright__",
+    "__version__",
 ]
-
 __title__ = "cryptography_vectors"
 __summary__ = "Test vectors for the cryptography package."
 

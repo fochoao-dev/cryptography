@@ -10,7 +10,8 @@ has support for implementing key rotation via :class:`MultiFernet`.
 
 .. class:: Fernet(key)
 
-    This class provides both encryption and decryption facilities.
+    This class provides both encryption and decryption facilities. This class
+    exhibits :term:`thread safety`.
 
     .. doctest::
 
@@ -19,20 +20,21 @@ has support for implementing key rotation via :class:`MultiFernet`.
         >>> f = Fernet(key)
         >>> token = f.encrypt(b"my deep dark secret")
         >>> token
-        '...'
+        b'...'
         >>> f.decrypt(token)
-        'my deep dark secret'
+        b'my deep dark secret'
 
-    :param bytes key: A URL-safe base64-encoded 32-byte key. This **must** be
-                      kept secret. Anyone with this key is able to create and
-                      read messages.
+    :param key: A URL-safe base64-encoded 32-byte key. This **must** be
+                kept secret. Anyone with this key is able to create and
+                read messages.
+    :type key: bytes or str
 
     .. classmethod:: generate_key()
 
         Generates a fresh fernet key. Keep this some place safe! If you lose it
         you'll no longer be able to decrypt messages; if anyone else gains
         access to it, they'll be able to decrypt all of your messages, and
-        they'll also be able forge arbitrary messages that will be
+        they'll also be able to forge arbitrary messages that will be
         authenticated and decrypted.
 
     .. method:: encrypt(data)
@@ -53,6 +55,28 @@ has support for implementing key rotation via :class:`MultiFernet`.
             generated in *plaintext*, the time a message was created will
             therefore be visible to a possible attacker.
 
+    .. method:: encrypt_at_time(data, current_time)
+
+       .. versionadded:: 3.0
+
+       Encrypts data passed using explicitly passed current time. See
+       :meth:`encrypt` for the documentation of the ``data`` parameter, the
+       return type and the exceptions raised.
+
+       The motivation behind this method is for the client code to be able to
+       test token expiration. Since this method can be used in an insecure
+       manner one should make sure the correct time (``int(time.time())``)
+       is passed as ``current_time`` outside testing.
+
+       :param int current_time: The current time.
+
+       .. note::
+
+            Similarly to :meth:`encrypt` the encrypted message contains the
+            timestamp in *plaintext*, in this case the timestamp is the value
+            of the ``current_time`` parameter.
+
+
     .. method:: decrypt(token, ttl=None)
 
         Decrypts a Fernet token. If successfully decrypted you will receive the
@@ -60,8 +84,8 @@ has support for implementing key rotation via :class:`MultiFernet`.
         raised. It is safe to use this data immediately as Fernet verifies
         that the data has not been tampered with prior to returning it.
 
-        :param bytes token: The Fernet token. This is the result of calling
-                            :meth:`encrypt`.
+        :param bytes or str token: The Fernet token. This is the result of
+                                   calling :meth:`encrypt`.
         :param int ttl: Optionally, the number of seconds old a message may be
                         for it to be valid. If the message is older than
                         ``ttl`` seconds (from the time it was originally
@@ -78,7 +102,40 @@ has support for implementing key rotation via :class:`MultiFernet`.
                                                   it does not have a valid
                                                   signature.
         :raises TypeError: This exception is raised if ``token`` is not
-                           ``bytes``.
+                           ``bytes`` or ``str``.
+
+    .. method:: decrypt_at_time(token, ttl, current_time)
+
+       .. versionadded:: 3.0
+
+       Decrypts a token using explicitly passed current time. See
+       :meth:`decrypt` for the documentation of the ``token`` and ``ttl``
+       parameters (``ttl`` is required here), the return type and the exceptions
+       raised.
+
+       The motivation behind this method is for the client code to be able to
+       test token expiration. Since this method can be used in an insecure
+       manner one should make sure the correct time (``int(time.time())``)
+       is passed as ``current_time`` outside testing.
+
+       :param int current_time: The current time.
+
+
+    .. method:: extract_timestamp(token)
+
+        .. versionadded:: 2.3
+
+        Returns the timestamp for the token. The caller can then decide if
+        the token is about to expire and, for example, issue a new token.
+
+        :param bytes or str token: The Fernet token. This is the result of
+                                   calling :meth:`encrypt`.
+        :returns int: The Unix timestamp of the token.
+        :raises cryptography.fernet.InvalidToken: If the ``token``'s signature
+                                                  is invalid this exception
+                                                  is raised.
+        :raises TypeError: This exception is raised if ``token`` is not
+                           ``bytes`` or ``str``.
 
 
 .. class:: MultiFernet(fernets)
@@ -97,9 +154,9 @@ has support for implementing key rotation via :class:`MultiFernet`.
         >>> f = MultiFernet([key1, key2])
         >>> token = f.encrypt(b"Secret message!")
         >>> token
-        '...'
+        b'...'
         >>> f.decrypt(token)
-        'Secret message!'
+        b'Secret message!'
 
     MultiFernet performs all encryption options using the *first* key in the
     ``list`` provided. MultiFernet attempts to decrypt tokens with each key in
@@ -136,23 +193,23 @@ has support for implementing key rotation via :class:`MultiFernet`.
            >>> f = MultiFernet([key1, key2])
            >>> token = f.encrypt(b"Secret message!")
            >>> token
-           '...'
+           b'...'
            >>> f.decrypt(token)
-           'Secret message!'
+           b'Secret message!'
            >>> key3 = Fernet(Fernet.generate_key())
            >>> f2 = MultiFernet([key3, key1, key2])
            >>> rotated = f2.rotate(token)
            >>> f2.decrypt(rotated)
-           'Secret message!'
+           b'Secret message!'
 
-        :param bytes msg: The token to re-encrypt.
+        :param bytes or str msg: The token to re-encrypt.
         :returns bytes: A secure message that cannot be read or altered without
            the key. This is URL-safe base64-encoded. This is referred to as a
            "Fernet token".
         :raises cryptography.fernet.InvalidToken: If a ``token`` is in any
            way invalid this exception is raised.
         :raises TypeError: This exception is raised if the ``msg`` is not
-           ``bytes``.
+           ``bytes`` or ``str``.
 
 
 .. class:: InvalidToken
@@ -165,7 +222,8 @@ Using passwords with Fernet
 
 It is possible to use passwords with Fernet. To do this, you need to run the
 password through a key derivation function such as
-:class:`~cryptography.hazmat.primitives.kdf.pbkdf2.PBKDF2HMAC`, bcrypt or
+:class:`~cryptography.hazmat.primitives.kdf.pbkdf2.PBKDF2HMAC`,
+:class:`~cryptography.hazmat.primitives.kdf.argon2.Argon2id` or
 :class:`~cryptography.hazmat.primitives.kdf.scrypt.Scrypt`.
 
 .. doctest::
@@ -173,7 +231,6 @@ password through a key derivation function such as
     >>> import base64
     >>> import os
     >>> from cryptography.fernet import Fernet
-    >>> from cryptography.hazmat.backends import default_backend
     >>> from cryptography.hazmat.primitives import hashes
     >>> from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
     >>> password = b"password"
@@ -182,23 +239,22 @@ password through a key derivation function such as
     ...     algorithm=hashes.SHA256(),
     ...     length=32,
     ...     salt=salt,
-    ...     iterations=100000,
-    ...     backend=default_backend()
+    ...     iterations=1_200_000,
     ... )
     >>> key = base64.urlsafe_b64encode(kdf.derive(password))
     >>> f = Fernet(key)
     >>> token = f.encrypt(b"Secret message!")
     >>> token
-    '...'
+    b'...'
     >>> f.decrypt(token)
-    'Secret message!'
+    b'Secret message!'
 
 In this scheme, the salt has to be stored in a retrievable location in order
 to derive the same key from the password in the future.
 
 The iteration count used should be adjusted to be as high as your server can
-tolerate. A good default is at least 100,000 iterations which is what Django
-recommended in 2014.
+tolerate. A good default is at least 1,200,000 iterations, which is what `Django
+recommends as of January 2025`_.
 
 Implementation
 --------------
@@ -220,9 +276,11 @@ Limitations
 -----------
 
 Fernet is ideal for encrypting data that easily fits in memory. As a design
-feature it does not expose unauthenticated bytes. Unfortunately, this makes it
-generally unsuitable for very large files at this time.
+feature it does not expose unauthenticated bytes. This means that the complete
+message contents must be available in memory, making Fernet generally
+unsuitable for very large files at this time.
 
 
 .. _`Fernet`: https://github.com/fernet/spec/
+.. _`Django recommends as of January 2025`: https://github.com/django/django/blob/main/django/contrib/auth/hashers.py
 .. _`specification`: https://github.com/fernet/spec/blob/master/Spec.md
