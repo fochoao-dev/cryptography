@@ -137,9 +137,10 @@ def aes_key_unwrap_with_padding(
     mli = int.from_bytes(a[4:], byteorder="big")
     b = (8 * n) - mli
     if (
-        not bytes_eq(a[:4], b"\xa6\x59\x59\xa6")
-        or not 8 * (n - 1) < mli <= 8 * n
-        or (b != 0 and not bytes_eq(data[-b:], b"\x00" * b))
+        not bytes_eq(a[:4], b"\xa6\x59\x59\xa6") or not
+        8 * (n - 1) < mli <= 8 * n or (
+            b != 0 and not bytes_eq(data[-b:], b"\x00" * b)
+        )
     ):
         raise InvalidUnwrap()
 

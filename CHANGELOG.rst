@@ -1,6 +1,7 @@
 Changelog
 =========
 
+
 .. _v46-0-0:
 
 46.0.0 - `main`_
@@ -1515,8 +1516,7 @@ Changelog
   :func:`~cryptography.hazmat.primitives.keywrap.aes_key_unwrap_with_padding`
   that caused it to raise ``InvalidUnwrap`` when key length modulo 8 was
   zero.
-
-
+  
 .. _v2-2:
 
 2.2 - 2018-03-19
