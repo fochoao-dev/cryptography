@@ -116,7 +116,7 @@ dependencies = [
  "cryptography-openssl",
  "cryptography-x509",
  "cryptography-x509-verification",
- "foreign-types-shared 0.1.1",
+ "foreign-types-shared 0.3.1",
  "once_cell",
  "openssl",
  "openssl-sys",
