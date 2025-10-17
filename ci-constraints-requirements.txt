@@ -95,7 +95,7 @@ mypy-extensions==1.1.0
     # via mypy
 nh3==0.2.21
     # via readme-renderer
-nox==2025.5.1
+nox==2025.10.16
     # via cryptography (pyproject.toml)
 packaging==25.0
     # via
