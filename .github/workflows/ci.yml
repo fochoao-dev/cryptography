@@ -71,7 +71,7 @@ jobs:
           cache-dependency-path: ci-constraints-requirements.txt
         timeout-minutes: 3
       - name: Setup rust
-        uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b
+        uses: dtolnay/rust-toolchain@0b1efabc08b657293548b77fb76cc02d26091c7e
         with:
           toolchain: ${{ matrix.PYTHON.RUST }}
           components: rustfmt,clippy
@@ -371,7 +371,7 @@ jobs:
           cache-dependency-path: ci-constraints-requirements.txt
         timeout-minutes: 3
       - name: Setup rust
-        uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b
+        uses: dtolnay/rust-toolchain@0b1efabc08b657293548b77fb76cc02d26091c7e
         with:
           toolchain: stable
         if: matrix.WINDOWS.ARCH == 'arm64'
