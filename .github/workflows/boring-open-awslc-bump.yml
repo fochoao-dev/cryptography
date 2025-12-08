@@ -87,7 +87,7 @@ jobs:
           private_key: ${{ secrets.BORINGBOT_PRIVATE_KEY }}
         if: steps.check-sha-boring.outputs.COMMIT_SHA || steps.check-sha-openssl.outputs.COMMIT_SHA || steps.check-tag-aws-lc.outputs.NEW_TAG
       - name: Create Pull Request
-        uses: peter-evans/create-pull-request@271a8d0340265f705b14b6d32b9829c1cb33d45e # v7.0.8
+        uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7.0.11
         with:
           branch: "bump-openssl-boringssl"
           commit-message: "Bump BoringSSL, OpenSSL, AWS-LC in CI"
