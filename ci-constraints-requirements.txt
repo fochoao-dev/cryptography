@@ -10,7 +10,7 @@ argcomplete==3.6.2
     # via nox
 attrs==25.3.0
     # via nox
-babel==2.17.0
+babel==2.18.0
     # via sphinx
 build==1.2.2.post1
     # via
